@@ -1,0 +1,3 @@
+[submodule "text-to-gcode"]
+	path = text-to-gcode
+	url = https://github.com/Stypox/text-to-gcode.git
