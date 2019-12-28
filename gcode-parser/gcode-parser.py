@@ -1,26 +1,14 @@
 #!/usr/bin/python3
-# TODO optimization: remove useless moves next to each other
-# TODO optimization: remove duplicate instructions
 
-import struct
-import enum
-
-useG = True
-useFeed = False
-feedVisibleBelow = 500
-useSpeed = False
-speedVisibleBelow = 50
-
-sizeXMm = 80
-sizeYMm = 80
-stepsToMmFactor = 3000 / 52
-addHomeAtTheEnd = True
+from enum import Enum
+import argparse
+import sys
 
 writeByte = b"w"
 moveByte = b"m"
 
 
-class AttrType(enum.Enum):
+class AttrType(Enum):
 	pen = 0,
 	x   = 1,
 	y   = 2
@@ -67,7 +55,7 @@ class AttributeParser:
 
 			return (key, value)
 		except:
-			print(f"[{lineNr},WARNING]: ignoring unknown attribute \"{word}\"")
+			log(f"[WARNING {lineNr:>5}]: ignoring unknown attribute \"{word}\"")
 			return None
 		
 
@@ -85,10 +73,10 @@ class ParsedLine:
 			else:
 				end = code.find(")")
 				if end == -1:
-					print(f"[{lineNr},WARNING]: missing closing parenthesis on comment starting in position {begin+1}")
+					log(f"[WARNING {lineNr:>5}]: missing closing parenthesis on comment starting in position {begin+1}")
 					return code[:begin]
 				else:
-					print(f"[{lineNr},comment]: {code[begin+1:end]}")
+					log(f"[comment {lineNr:>5}]: {code[begin+1:end]}")
 					return code[:begin] + " " + removeComments(code[end+1:])
 
 		attributes = {k: v for k, v in lastAttributes.items()}
@@ -141,6 +129,7 @@ def translateToFirstQuarter(parsedGcode):
 def getDilationFactor(parsedGcode, sizeX, sizeY):
 	"""
 	parsedGcode must be first translated to the first quarter
+	TODO ^ improve
 	"""
 
 	maxX = max([line[AttrType.x] for line in parsedGcode])
@@ -157,8 +146,10 @@ def dilate(parsedGcode, dilationFactor):
 		line[AttrType.y] *= dilationFactor
 	return parsedGcode
 
+def toGcode(parsedGcode):
+	return "\n".join([l.gcode() for l in parsedGcode], ) + "\n"
 
-def arduinoData(parsedGcode):
+def toArduinoData(parsedGcode):
 	stepsX, stepsY = 0, 0
 	data = b""
 
@@ -178,7 +169,6 @@ def arduinoData(parsedGcode):
 	
 	return data
 
-
 def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	attributeParser = AttributeParser(useG, feedVisibleBelow, speedVisibleBelow)
 	lines = data.split("\n")
@@ -188,7 +178,6 @@ def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	for l in range(0, len(lines)):
 		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, parsedGcode[-1].attributes)
 		if parsedLine.shouldOverwrite(parsedGcode[-1].attributes):
-			print("overwriting", parsedLine, parsedGcode[-1])
 			parsedGcode[-1] = parsedLine
 		else:
 			parsedGcode.append(parsedLine)
@@ -200,24 +189,76 @@ def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	return parsedGcode
 
 
+def parseArgs(namespace):
+	argParser = argparse.ArgumentParser(fromfile_prefix_chars="@",
+		description="Parse the gcode provided on stdin and apply transformations")
+	ioGroup = argParser.add_argument_group("Input/output options")
+	ioGroup.add_argument("-i", "--input", type=argparse.FileType('r'), default="-", metavar="FILE",
+		help="File from which to read the gcode to parse")
+	ioGroup.add_argument("-o", "--output", type=argparse.FileType('w'), required=False, metavar="FILE",
+		help="File in which to save the processed gcode")
+	ioGroup.add_argument("-b", "--binary-output", type=argparse.FileType('wb'), required=False, metavar="FILE",
+		help="File in which to save the binary data to feed to the plotter")
+	ioGroup.add_argument("-l", "--log", type=argparse.FileType('w'), required=False, metavar="FILE",
+		help="File in which to save logs, comments and warnings")
+
+	parseGroup = argParser.add_argument_group("Gcode parsing options (at least one should be used)")
+	parseGroup.add_argument("-g", "--use-g", action="store_true",
+		help="Consider `G0` as pen up and `G1` as pen down")
+	parseGroup.add_argument("--feed-visible-below", type=float, metavar="VALUE",
+		help="Consider `F` (feed) commands with a value above the provided as pen down, otherwise as pen up")
+	parseGroup.add_argument("--speed-visible-below", type=float, metavar="VALUE",
+		help="Consider `S` (speed) commands with a value above the provided as pen down, otherwise as pen up")
+
+	genGroup = argParser.add_argument_group("Gcode generation options")
+	genGroup.add_argument("--end-home", action="store_true",
+		help="Add a trailing instruction to move to (0,0) instead of just taking the pen up")
+	genGroup.add_argument("-s", "--size", type=str, default="1.0x1.0", metavar="XxY",
+		help="The size of the print area in millimeters (e.g. 192.7x210.3)")
+	genGroup.add_argument("-d", "--dilation", type=float, default=1.0, metavar="FACTOR",
+		help="Dilation factor to apply (useful to convert mm to steps)")
+
+	argParser.parse_args(namespace=namespace)
+	if namespace.output is None and namespace.binary_output is None:
+		argParser.error("at least one of --output, --binary-output should be provided")
+	
+	try:
+		size = namespace.size.split("x")
+		namespace.xSize = float(size[0])
+		namespace.ySize = float(size[1])
+	except:
+		argParser.error(f"invalid formatting for --size: {namespace.size}")
+	
+	if namespace.use_g == False and namespace.feed_visible_below is None and namespace.speed_visible_below is None:
+		argParser.error(f"at least one of --use-g, --feed-visible-below, --speed-visible-below should be provided")
+
+def log(*args, **kwargs):
+	if Args.log is not None:
+		print(*args, **kwargs, file=Args.log)
+
+class Args:
+	pass
+
 def main():
-	parsedGcode = parseGcode(open("input.nc").read(), useG=useG,
-		feedVisibleBelow=(feedVisibleBelow if useFeed else None),
-		speedVisibleBelow=(speedVisibleBelow if useSpeed else None))
-	#print(*parsedGcode[:100], sep="\n")
+	parseArgs(Args)
+
+	parsedGcode = parseGcode(Args.input.read(), useG=Args.use_g,
+		feedVisibleBelow=Args.feed_visible_below,
+		speedVisibleBelow=Args.speed_visible_below)
 
 	parsedGcode = translateToFirstQuarter(parsedGcode)
-	if addHomeAtTheEnd:
+	if Args.end_home:
 		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
+	elif len(parsedGcode) > 0:
+		parsedGcode.append(ParsedLine.fromRawCoordinates(0,
+			parsedGcode[-1][AttrType.x], parsedGcode[-1][AttrType.y]))
 
-	parsedGcode = dilate(parsedGcode, .1)
-	open("gcode.nc", "w").write("\n".join([l.gcode() for l in parsedGcode]))
-
-	dilationFactor = stepsToMmFactor * getDilationFactor(parsedGcode, sizeXMm, sizeYMm)
+	dilationFactor = Args.dilation * getDilationFactor(parsedGcode, Args.xSize, Args.ySize)
 	parsedGcode = dilate(parsedGcode, dilationFactor)
-	print("Dilatation coefficient:", dilationFactor)
+	log("[info] Dilation factor:", dilationFactor)
 
-	open("arduino.txt", "wb").write(arduinoData(parsedGcode))
+	Args.output.write(toGcode(parsedGcode))
+	Args.binary_output.write(toArduinoData(parsedGcode))
 
 if __name__ == '__main__':
 	main()
