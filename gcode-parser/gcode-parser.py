@@ -11,14 +11,12 @@ feedVisibleBelow = 500
 useSpeed = False
 speedVisibleBelow = 50
 
+sizeXMm = 80
+sizeYMm = 80
+stepsToMmFactor = 3000 / 52
+
 writeByte = b"w"
 moveByte = b"m"
-dilationCoefficient = 1 # placeholder value
-sizeXmm = 80
-sizeYmm = 80
-
-def mmToSteps(mm):
-	return mm * 3000 / 52
 
 
 class AttrType(enum.Enum):
@@ -73,22 +71,43 @@ class AttributeParser:
 		
 
 class ParsedLine:
-	def __init__(self, attributeParser, line, lineNr, lastAttributes):
-		self.lineNr = lineNr
-		self.line = self.removeComments(line)
-		self.attributes = {k: v for k, v in lastAttributes.items()}
+	@classmethod
+	def fromRawCoordinates(cls, pen, x, y, lineNr=None):
+		return cls({AttrType.pen: pen, AttrType.x: x, AttrType.y: y}, lineNr)
+	
+	@classmethod
+	def fromGcodeLine(cls, attributeParser, line, lineNr, lastAttributes):
+		def removeComments(code):
+			begin = code.find("(")
+			if begin == -1:
+				return code
+			else:
+				end = code.find(")")
+				if end == -1:
+					print(f"[{lineNr},WARNING]: missing closing parenthesis on comment starting in position {begin+1}")
+					return code[:begin]
+				else:
+					print(f"[{lineNr},comment]: {code[begin+1:end]}")
+					return code[:begin] + " " + removeComments(code[end+1:])
 
-		words = self.line.split(" ")
+		attributes = {k: v for k, v in lastAttributes.items()}
+		words = removeComments(line).split(" ")
+
 		for word in words:
 			attribute = attributeParser.parseAttribute(word, lineNr)
 			if attribute is not None:
-				self.attributes[attribute[0]] = attribute[1]
+				attributes[attribute[0]] = attribute[1]
+	
+		return cls(attributes, lineNr)
+
+
+	def __init__(self, attributes, lineNr):
+		self.attributes = attributes
+		self.lineNr = lineNr
 
 	def __repr__(self):
-		return ("[" + str(self.lineNr) + "," + " " * (5-len(str(self.lineNr))) + "data]" +
-				"  pen=" + repr(self[AttrType.pen]) +
-				("  x=%+.5f" % self[AttrType.x]) +
-				("  y=%+.5f" % self[AttrType.y]))
+		lineRepr = "EOF" if self.lineNr is None else self.lineNr
+		return f"[{lineRepr:>5} data]:   pen={self[AttrType.pen]}   x={self[AttrType.x]:>12.5f}   y={self[AttrType.y]:>12.5f}"
 
 	def __getitem__(self, key):
 		return self.attributes[key]
@@ -96,18 +115,6 @@ class ParsedLine:
 	def __setitem__(self, key, value):
 		self.attributes[key] = value
 
-	def removeComments(self, line):
-		begin = line.find("(")
-		if begin == -1:
-			return line
-		else:
-			end = line.find(")")
-			if end == -1:
-				print(f"[{self.lineNr},WARNING]: missing closing parenthesis on comment starting in position {begin+1}")
-				return line[:begin]
-			else:
-				print(f"[{self.lineNr},comment]: {line[begin+1:end]}")
-				return line[:begin] + " " + self.removeComments(line[end+1:])
 	
 	def changedCoordinates(self, lastAttributes):
 		# return True if the parsed line does nothing or only changes G or F values
@@ -115,63 +122,58 @@ class ParsedLine:
 			self[AttrType.y] != lastAttributes[AttrType.y])
 
 	def gcode(self):
-		return "G%s X%.3f Y%.3f" % (repr(self[AttrType.pen]),
-								self[AttrType.x],
-								self[AttrType.y])
-
-class EmptyLine:
-	def __repr__(self):
-		return "[EOF,  data]  pen=0  x=0.00000f  y=0.00000f"
-	def __getitem__(self, key):
-		return 0
-	
-	def gcode(self):
-		return "G0 X0.000 Y0.000"
+		return f"G{self[AttrType.pen]} X{self[AttrType.x]:.3f} Y{self[AttrType.y]:.3f}"
 
 
-def translateToFirstQuarter(lines):
-	translationX = -min([line[AttrType.x] for line in lines])
-	translationY = -min([line[AttrType.y] for line in lines])
+def translateToFirstQuarter(parsedGcode, addHomeAtTheEnd):
+	translationX = -min([line[AttrType.x] for line in parsedGcode])
+	translationY = -min([line[AttrType.y] for line in parsedGcode])
 
-	for line in lines:
+	for line in parsedGcode:
 		line[AttrType.x] += translationX
 		line[AttrType.y] += translationY
 	
-	return lines
+	if addHomeAtTheEnd:
+		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
+	return parsedGcode
 
-def maxX(lines):
-	return max([line[AttrType.x] for line in lines])
-def maxY(lines):
-	return max([line[AttrType.y] for line in lines])
+def getDilationFactor(parsedGcode, sizeX, sizeY):
+	"""
+	parsedGcode must be first translated to the first quarter
+	"""
 
-def arduinoData(lines):
+	maxX = max([line[AttrType.x] for line in parsedGcode])
+	maxY = max([line[AttrType.y] for line in parsedGcode])
+
+	return min([
+		sizeX / maxX,
+		sizeY / maxY,
+	])
+
+def dilate(parsedGcode, dilationFactor):
+	for line in parsedGcode:
+		line[AttrType.x] *= dilationFactor
+		line[AttrType.y] *= dilationFactor
+	return parsedGcode
+
+
+def arduinoData(parsedGcode):
 	stepsX, stepsY = 0, 0
 	data = b""
 
-	for line in lines:
-		x = line[AttrType.x] * dilationCoefficient
-		y = line[AttrType.y] * dilationCoefficient
-
-		currentStepsX = int(round(x-stepsX))
-		currentStepsY = int(round(y-stepsY))
+	for line in parsedGcode:
+		currentStepsX = int(round(line[AttrType.x]-stepsX))
+		currentStepsY = int(round(line[AttrType.y]-stepsY))
 		stepsX += currentStepsX
-		stepsY += currentStepsY
-		
+		stepsY += currentStepsY		
 
 		if line[AttrType.pen]:
 			data += writeByte
 		else:
 			data += moveByte
 
-		bytesX = currentStepsX.to_bytes(2, byteorder="big", signed=True)
-		bytesY = currentStepsY.to_bytes(2, byteorder="big", signed=True)
-		
-		if len(bytesX) == 1:
-			data += b'\x00'
-		data += bytesX
-		if len(bytesY) == 1:
-			data += b'\x00'
-		data += bytesY
+		data += currentStepsX.to_bytes(2, byteorder="big", signed=True)
+		data += currentStepsY.to_bytes(2, byteorder="big", signed=True)
 	
 	return data
 
@@ -179,7 +181,7 @@ def arduinoData(lines):
 def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	attributeParser = AttributeParser(useG, feedVisibleBelow, speedVisibleBelow)
 	lines = data.split("\n")
-	parsedLines = []
+	parsedGcode = []
 	lastAttributes = {
 		AttrType.pen: None,
 		AttrType.x: None,
@@ -187,31 +189,28 @@ def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	}
 
 	for l in range(0, len(lines)):
-		parsedLine = ParsedLine(attributeParser, lines[l], l+1, lastAttributes)
+		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, lastAttributes)
 		if parsedLine.changedCoordinates(lastAttributes):
-			parsedLines.append(parsedLine)
+			parsedGcode.append(parsedLine)
 		lastAttributes = {k: v for k, v in parsedLine.attributes.items()}
-	
-	return parsedLines
+
+	return parsedGcode
 
 
 def main():
-	parsedLines = parseGcode(open("input.nc").read(), useG=useG,
+	parsedGcode = parseGcode(open("input.nc").read(), useG=useG,
 		feedVisibleBelow=(feedVisibleBelow if useFeed else None),
 		speedVisibleBelow=(speedVisibleBelow if useSpeed else None))
-	#print(*parsedLines[:100], sep="\n")
+	#print(*parsedGcode[:100], sep="\n")
 
-	parsedLines = translateToFirstQuarter(parsedLines)
-	global dilationCoefficient
-	dilationCoefficient = min([
-		mmToSteps(sizeXmm) / maxX(parsedLines),
-		mmToSteps(sizeYmm) / maxY(parsedLines),
-	])
-	print("Dilatation coefficient:", dilationCoefficient)
+	parsedGcode = translateToFirstQuarter(parsedGcode, True)
+	open("gcode.nc", "w").write("\n".join([l.gcode() for l in parsedGcode]))
 
-	parsedLines.append(EmptyLine())
-	open("gcode.nc", "w").write("\n".join([l.gcode() for l in parsedLines]))
-	open("arduino.txt", "wb").write(arduinoData(parsedLines))
+	dilationFactor = stepsToMmFactor * getDilationFactor(parsedGcode, sizeXMm, sizeYMm)
+	parsedGcode = dilate(parsedGcode, dilationFactor)
+	print("Dilatation coefficient:", dilationFactor)
+
+	open("arduino.txt", "wb").write(arduinoData(parsedGcode))
 
 if __name__ == '__main__':
 	main()
