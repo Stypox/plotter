@@ -5,8 +5,6 @@
 import struct
 import enum
 
-penAtBeginning = 0   # 0=up, 1=down
-
 useG = True
 useFeed = False
 feedVisibleBelow = 500
@@ -15,86 +13,86 @@ speedVisibleBelow = 50
 
 writeByte = b"w"
 moveByte = b"m"
-dilationCoefficient = 17
+dilationCoefficient = 1 # placeholder value
 sizeXmm = 80
 sizeYmm = 80
+
 def mmToSteps(mm):
 	return mm * 3000 / 52
+
 
 class AttrType(enum.Enum):
 	pen = 0,
 	x   = 1,
 	y   = 2
 
+class AttributeParser:
+	def __init__(self, useG, feedVisibleBelow, speedVisibleBelow):
+		self.useG = useG
+		self.useFeed = feedVisibleBelow is not None
+		self.feedVisibleBelow = feedVisibleBelow
+		self.useSpeed = speedVisibleBelow is not None
+		self.speedVisibleBelow = speedVisibleBelow
 
-class Attribute:
-	def __init__(self, word, lineNr):
+		if not self.useG and not self.useFeed and not self.useSpeed:
+			raise ValueError("At least a method (G, feed or speed) has to be specified to parse gcode")
+	
+	def parseAttribute(self, word, lineNr):
 		try:
 			if word == "":
-				self.type = ""
+				key = ""
 			else:
-				self.type = word[0].upper()
+				try: # attribute value is an integer
+					value = int(word[1:])
+				except: # attribute value is a floating point number
+					value = float(word[1:])
 
-				try:
-					# attribute is an integer
-					self.value = int(word[1:])
-				except:
-					# attribute is a floating point number
-					self.value = float(word[1:])
+				key = word[0].upper()
+				if   key == "F" and self.useFeed:
+					key = AttrType.pen
+					value = 1 if value < feedVisibleBelow else 0
+				elif key == "G" and self.useG:
+					if value == 0 or value == 1:
+						key = AttrType.pen
+					else:
+						raise ValueError()
+				elif key == "S" and self.useSpeed:
+					key = AttrType.pen
+					value = 1 if value < speedVisibleBelow else 0
+				elif key == "X":
+					key = AttrType.x
+				elif key == "Y":
+					key = AttrType.y
+				else:
+					raise ValueError()
 
-				self.normalizeType()
+			return (key, value)
 		except:
-			print("[%s,WARNING]: ignoring unknown attribute \"%s\"" % (lineNr, word))
-			self.type = ""
-	def __eq__(self, other):
-		return self.type == other
-	def __repr__(self):
-		return repr(self.type) + ":" + repr(self.value)
-
-	def normalizeType(self):
-		if useFeed and self.type == "F":
-			self.type = AttrType.pen
-			self.value = 1 if self.value < feedVisibleBelow else 0
-		elif useG and self.type == "G":
-			if self.value == 0 or self.value == 1:
-				self.type = AttrType.pen
-			else:
-				self.type = ""
-		elif useSpeed and self.type == "S":
-			self.type = AttrType.pen
-			self.value = 1 if self.value < speedVisibleBelow else 0
-		elif self.type == "X":
-			self.type = AttrType.x
-		elif self.type == "Y":
-			self.type = AttrType.y
-		else:
-			self.type = ""
-
-	def toBeIgnored(self):
-		return self.type == ""
+			print(f"[{lineNr},WARNING]: ignoring unknown attribute \"{word}\"")
+			return None
+		
 
 class ParsedLine:
-	def __init__(self, line, lineNr, lastAttributes):
-		self.originalLine = line
+	def __init__(self, attributeParser, line, lineNr, lastAttributes):
 		self.lineNr = lineNr
-		self.uncommentedLine = self.removeComments(line)
+		self.line = self.removeComments(line)
 		self.attributes = {k: v for k, v in lastAttributes.items()}
 
-		words = self.uncommentedLine.split(" ")
+		words = self.line.split(" ")
+		for word in words:
+			attribute = attributeParser.parseAttribute(word, lineNr)
+			if attribute is not None:
+				self.attributes[attribute[0]] = attribute[1]
 
-		i = 0
-		while i < len(words):
-			attribute = Attribute(words[i], lineNr)
-			if not attribute.toBeIgnored():
-				self.attributes[attribute.type] = attribute.value
-			i += 1
 	def __repr__(self):
 		return ("[" + str(self.lineNr) + "," + " " * (5-len(str(self.lineNr))) + "data]" +
 				"  pen=" + repr(self[AttrType.pen]) +
 				("  x=%+.5f" % self[AttrType.x]) +
 				("  y=%+.5f" % self[AttrType.y]))
+
 	def __getitem__(self, key):
 		return self.attributes[key]
+
 	def __setitem__(self, key, value):
 		self.attributes[key] = value
 
@@ -105,10 +103,10 @@ class ParsedLine:
 		else:
 			end = line.find(")")
 			if end == -1:
-				print("[%s,WARNING]: missing closing parenthesis on comment starting in position %s" % (self.lineNr, begin+1))
+				print(f"[{self.lineNr},WARNING]: missing closing parenthesis on comment starting in position {begin+1}")
 				return line[:begin]
 			else:
-				print("[%s,comment] %s" % (self.lineNr, line[begin+1:end]))
+				print(f"[{self.lineNr},comment]: {line[begin+1:end]}")
 				return line[:begin] + " " + self.removeComments(line[end+1:])
 	
 	def changedCoordinates(self, lastAttributes):
@@ -122,7 +120,6 @@ class ParsedLine:
 								self[AttrType.y])
 
 class EmptyLine:
-	def __init__(self): pass
 	def __repr__(self):
 		return "[EOF,  data]  pen=0  x=0.00000f  y=0.00000f"
 	def __getitem__(self, key):
@@ -130,27 +127,9 @@ class EmptyLine:
 	
 	def gcode(self):
 		return "G0 X0.000 Y0.000"
-	
 
-def parse(data):
-	lines = data.split("\n")
-	parsedLines = []
-	lastAttributes = {
-		AttrType.pen: penAtBeginning,
-		AttrType.x: None,
-		AttrType.y: None
-	}
 
-	for lineIndex in range(0, len(lines)):
-		parsedLine = ParsedLine(lines[lineIndex], lineIndex+1, lastAttributes)
-		if parsedLine.changedCoordinates(lastAttributes):
-			parsedLines.append(parsedLine)
-		lastAttributes = {k: v for k, v in parsedLine.attributes.items()}
-		pass
-	
-	return parsedLines
-
-def translateToFirstQuadrant(lines):
+def translateToFirstQuarter(lines):
 	translationX = -min([line[AttrType.x] for line in lines])
 	translationY = -min([line[AttrType.y] for line in lines])
 
@@ -197,11 +176,32 @@ def arduinoData(lines):
 	return data
 
 
+def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
+	attributeParser = AttributeParser(useG, feedVisibleBelow, speedVisibleBelow)
+	lines = data.split("\n")
+	parsedLines = []
+	lastAttributes = {
+		AttrType.pen: None,
+		AttrType.x: None,
+		AttrType.y: None
+	}
+
+	for l in range(0, len(lines)):
+		parsedLine = ParsedLine(attributeParser, lines[l], l+1, lastAttributes)
+		if parsedLine.changedCoordinates(lastAttributes):
+			parsedLines.append(parsedLine)
+		lastAttributes = {k: v for k, v in parsedLine.attributes.items()}
+	
+	return parsedLines
+
+
 def main():
-	parsedLines = parse(open("input.nc").read())
+	parsedLines = parseGcode(open("input.nc").read(), useG=useG,
+		feedVisibleBelow=(feedVisibleBelow if useFeed else None),
+		speedVisibleBelow=(speedVisibleBelow if useSpeed else None))
 	#print(*parsedLines[:100], sep="\n")
 
-	parsedLines = translateToFirstQuadrant(parsedLines)
+	parsedLines = translateToFirstQuarter(parsedLines)
 	global dilationCoefficient
 	dilationCoefficient = min([
 		mmToSteps(sizeXmm) / maxX(parsedLines),
