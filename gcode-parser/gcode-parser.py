@@ -14,6 +14,7 @@ speedVisibleBelow = 50
 sizeXMm = 80
 sizeYMm = 80
 stepsToMmFactor = 3000 / 52
+addHomeAtTheEnd = True
 
 writeByte = b"w"
 moveByte = b"m"
@@ -116,16 +117,18 @@ class ParsedLine:
 		self.attributes[key] = value
 
 	
-	def changedCoordinates(self, lastAttributes):
-		# return True if the parsed line does nothing or only changes G or F values
-		return (self[AttrType.x] != lastAttributes[AttrType.x] or
-			self[AttrType.y] != lastAttributes[AttrType.y])
-
+	def shouldOverwrite(self, lastAttributes):
+		return 	((self[AttrType.x] == lastAttributes[AttrType.x]
+						and self[AttrType.y] == lastAttributes[AttrType.y]
+						and self[AttrType.pen] == lastAttributes[AttrType.pen])
+					or (self[AttrType.pen] == 0
+						and lastAttributes[AttrType.pen] == 0))
+	
 	def gcode(self):
 		return f"G{self[AttrType.pen]} X{self[AttrType.x]:.3f} Y{self[AttrType.y]:.3f}"
 
 
-def translateToFirstQuarter(parsedGcode, addHomeAtTheEnd):
+def translateToFirstQuarter(parsedGcode):
 	translationX = -min([line[AttrType.x] for line in parsedGcode])
 	translationY = -min([line[AttrType.y] for line in parsedGcode])
 
@@ -133,8 +136,6 @@ def translateToFirstQuarter(parsedGcode, addHomeAtTheEnd):
 		line[AttrType.x] += translationX
 		line[AttrType.y] += translationY
 	
-	if addHomeAtTheEnd:
-		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
 	return parsedGcode
 
 def getDilationFactor(parsedGcode, sizeX, sizeY):
@@ -181,18 +182,20 @@ def arduinoData(parsedGcode):
 def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
 	attributeParser = AttributeParser(useG, feedVisibleBelow, speedVisibleBelow)
 	lines = data.split("\n")
-	parsedGcode = []
-	lastAttributes = {
-		AttrType.pen: None,
-		AttrType.x: None,
-		AttrType.y: None
-	}
+	# mostly safe: it should be overwritten by the first (move) command in data
+	parsedGcode = [ParsedLine.fromRawCoordinates(0, 0, 0, 0)]
 
 	for l in range(0, len(lines)):
-		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, lastAttributes)
-		if parsedLine.changedCoordinates(lastAttributes):
+		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, parsedGcode[-1].attributes)
+		if parsedLine.shouldOverwrite(parsedGcode[-1].attributes):
+			print("overwriting", parsedLine, parsedGcode[-1])
+			parsedGcode[-1] = parsedLine
+		else:
 			parsedGcode.append(parsedLine)
-		lastAttributes = {k: v for k, v in parsedLine.attributes.items()}
+
+	# remove trailing command that does not write anything
+	if len(parsedGcode) > 0 and parsedGcode[-1][AttrType.pen] == 0:
+		parsedGcode = parsedGcode[:-1]
 
 	return parsedGcode
 
@@ -203,7 +206,11 @@ def main():
 		speedVisibleBelow=(speedVisibleBelow if useSpeed else None))
 	#print(*parsedGcode[:100], sep="\n")
 
-	parsedGcode = translateToFirstQuarter(parsedGcode, True)
+	parsedGcode = translateToFirstQuarter(parsedGcode)
+	if addHomeAtTheEnd:
+		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
+
+	parsedGcode = dilate(parsedGcode, .1)
 	open("gcode.nc", "w").write("\n".join([l.gcode() for l in parsedGcode]))
 
 	dilationFactor = stepsToMmFactor * getDilationFactor(parsedGcode, sizeXMm, sizeYMm)
