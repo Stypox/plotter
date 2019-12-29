@@ -84,27 +84,17 @@ def parseArgs(namespace):
 class Args:
 	pass
 
-def main():
-	parseArgs(Args)
+def log(*args, **kwargs):
+	if Args.log is not None:
+		kwargs["flush"] = True
+		print(*args, **kwargs, file=Args.log)
 
-	def log(*args, **kwargs):
-		if Args.log is not None:
-			kwargs["flush"] = True
-			print(*args, **kwargs, file=Args.log)
-	
-	gcodeData = ""
-	if Args.subcommand == Subcommand.gcode:
-		gcodeData = Args.input.read()
-	elif Args.subcommand == Subcommand.text:
-		letters = text_to_gcode.readLetters(Args.gcode_directory)
-		text = Args.input.read()
-		gcodeData = text_to_gcode.textToGcode(letters, text, Args.line_length, Args.line_spacing, Args.padding)
 
-		# settings for gcode parser
-		Args.use_g = True
-		Args.feed_visible_below = None
-		Args.speed_visible_below = None
-	
+def textToGcode(text):
+	letters = text_to_gcode.readLetters(Args.gcode_directory)
+	return text_to_gcode.textToGcode(letters, text, Args.line_length, Args.line_spacing, Args.padding)
+
+def parseGcode(gcodeData):	
 	parsedGcode = gcode_parser.parseGcode(gcodeData, log=log,
 		useG=Args.use_g,
 		feedVisibleBelow=Args.feed_visible_below,
@@ -114,11 +104,31 @@ def main():
 	parsedGcode = gcode_parser.addEnd(parsedGcode, Args.end_home, log=log)
 	parsedGcode = gcode_parser.resize(parsedGcode, Args.xSize, Args.ySize, Args.dilation, log=log)
 
-	binaryData = gcode_parser.toBinaryData(parsedGcode)
+	return parsedGcode
+
+def writeOutputs(data, binaryData):
 	if Args.output is not None:
-		Args.output.write(gcode_parser.toGcode(parsedGcode))
+		Args.output.write(data)
 	if Args.binary_output is not None:
 		Args.binary_output.write(binaryData)
+
+def main():
+	parseArgs(Args)
+	
+	gcodeData = ""
+	if Args.subcommand == Subcommand.gcode:
+		gcodeData = Args.input.read()
+	elif Args.subcommand == Subcommand.text:
+		gcodeData = textToGcode(Args.input.read())
+
+		# settings for gcode parser
+		Args.use_g = True
+		Args.feed_visible_below = None
+		Args.speed_visible_below = None
+	
+	parsedGcode = parseGcode(gcodeData)
+	binaryData = gcode_parser.toBinaryData(parsedGcode)
+	writeOutputs(gcode_parser.toGcode(parsedGcode), binaryData)
 
 if __name__ == "__main__":
 	main()
