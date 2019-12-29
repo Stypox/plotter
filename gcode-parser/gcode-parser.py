@@ -8,6 +8,10 @@ writeByte = b"w"
 moveByte = b"m"
 
 
+def _log_nothing(*args, **kwargs):
+	pass
+
+
 class AttrType(Enum):
 	pen = 0,
 	x   = 1,
@@ -24,7 +28,7 @@ class AttributeParser:
 		if not self.useG and not self.useFeed and not self.useSpeed:
 			raise ValueError("At least a method (G, feed or speed) has to be specified to parse gcode")
 
-	def parseAttribute(self, word, lineNr):
+	def parseAttribute(self, word, lineNr, log=_log_nothing):
 		try:
 			if word == "":
 				key = ""
@@ -65,7 +69,7 @@ class ParsedLine:
 		return cls({AttrType.pen: pen, AttrType.x: x, AttrType.y: y}, lineNr)
 
 	@classmethod
-	def fromGcodeLine(cls, attributeParser, line, lineNr, lastAttributes):
+	def fromGcodeLine(cls, attributeParser, line, lineNr, lastAttributes, log=_log_nothing):
 		def removeComments(code):
 			begin = code.find("(")
 			if begin == -1:
@@ -83,7 +87,7 @@ class ParsedLine:
 		words = removeComments(line).split(" ")
 
 		for word in words:
-			attribute = attributeParser.parseAttribute(word, lineNr)
+			attribute = attributeParser.parseAttribute(word, lineNr, log=log)
 			if attribute is not None:
 				attributes[attribute[0]] = attribute[1]
 
@@ -164,14 +168,14 @@ def toArduinoData(parsedGcode):
 
 	return data
 
-def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
+def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None, log=_log_nothing):
 	attributeParser = AttributeParser(useG, feedVisibleBelow, speedVisibleBelow)
 	lines = data.split("\n")
 	# mostly safe: it should be overwritten by the first (move) command in data
 	parsedGcode = [ParsedLine.fromRawCoordinates(0, 0, 0, 0)]
 
 	for l in range(0, len(lines)):
-		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, parsedGcode[-1].attributes)
+		parsedLine = ParsedLine.fromGcodeLine(attributeParser, lines[l], l+1, parsedGcode[-1].attributes, log=log)
 		if parsedLine.shouldOverwrite(parsedGcode[-1].attributes):
 			parsedGcode[-1] = parsedLine
 		else:
@@ -228,17 +232,19 @@ def parseArgs(namespace):
 	if namespace.use_g == False and namespace.feed_visible_below is None and namespace.speed_visible_below is None:
 		argParser.error(f"at least one of --use-g, --feed-visible-below, --speed-visible-below should be provided")
 
-def log(*args, **kwargs):
-	if Args.log is not None:
-		print(*args, **kwargs, file=Args.log)
-
 class Args:
 	pass
 
 def main():
 	parseArgs(Args)
 
-	parsedGcode = parseGcode(Args.input.read(), useG=Args.use_g,
+	def log(*args, **kwargs):
+		if Args.log is not None:
+			print(*args, **kwargs, file=Args.log)
+
+
+	parsedGcode = parseGcode(Args.input.read(), log=log,
+		useG=Args.use_g,
 		feedVisibleBelow=Args.feed_visible_below,
 		speedVisibleBelow=Args.speed_visible_below)
 
