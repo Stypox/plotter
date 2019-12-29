@@ -1,5 +1,5 @@
 #include <Servo.h>
-constexpr int tempo = 4,
+constexpr int tempo = 4, tempoServo = 50,
 	pennaSu = 60, pennaGiu = 43, pennaSuAlta = 150;
 
 constexpr unsigned char move = 'm', write = 'w', end = 'a';
@@ -146,6 +146,7 @@ void setup() {
 				// the pen mode changed
 				penna = !penna;
 				servo.write(penna ? pennaGiu : pennaSu);
+				delay(tempoServo);
 			}
 
 			Serial.print(mode == write ? "Write  " : "Move   ");
