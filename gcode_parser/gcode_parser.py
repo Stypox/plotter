@@ -251,9 +251,11 @@ def main():
 	parsedGcode = translateToFirstQuarter(parsedGcode)
 	if Args.end_home:
 		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
+		log("[info] The gcode path ends at (0,0)")
 	elif len(parsedGcode) > 0:
 		parsedGcode.append(ParsedLine.fromRawCoordinates(0,
 			parsedGcode[-1][AttrType.x], parsedGcode[-1][AttrType.y]))
+		log("[info] Before dilating the gcode path ends at (" + str(parsedGcode[-1][AttrType.x]) + "," + parsedGcode[-1][AttrType.y] + ")")
 
 	dilationFactor = Args.dilation * getDilationFactor(parsedGcode, Args.xSize, Args.ySize)
 	parsedGcode = dilate(parsedGcode, dilationFactor)
