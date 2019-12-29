@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import argparse
 from enum import Enum
 import text_to_gcode.text_to_gcode as text_to_gcode
