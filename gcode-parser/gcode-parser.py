@@ -23,7 +23,7 @@ class AttributeParser:
 
 		if not self.useG and not self.useFeed and not self.useSpeed:
 			raise ValueError("At least a method (G, feed or speed) has to be specified to parse gcode")
-	
+
 	def parseAttribute(self, word, lineNr):
 		try:
 			if word == "":
@@ -57,13 +57,13 @@ class AttributeParser:
 		except:
 			log(f"[WARNING {lineNr:>5}]: ignoring unknown attribute \"{word}\"")
 			return None
-		
+
 
 class ParsedLine:
 	@classmethod
 	def fromRawCoordinates(cls, pen, x, y, lineNr=None):
 		return cls({AttrType.pen: pen, AttrType.x: x, AttrType.y: y}, lineNr)
-	
+
 	@classmethod
 	def fromGcodeLine(cls, attributeParser, line, lineNr, lastAttributes):
 		def removeComments(code):
@@ -86,7 +86,7 @@ class ParsedLine:
 			attribute = attributeParser.parseAttribute(word, lineNr)
 			if attribute is not None:
 				attributes[attribute[0]] = attribute[1]
-	
+
 		return cls(attributes, lineNr)
 
 
@@ -104,14 +104,14 @@ class ParsedLine:
 	def __setitem__(self, key, value):
 		self.attributes[key] = value
 
-	
+
 	def shouldOverwrite(self, lastAttributes):
 		return 	((self[AttrType.x] == lastAttributes[AttrType.x]
 						and self[AttrType.y] == lastAttributes[AttrType.y]
 						and self[AttrType.pen] == lastAttributes[AttrType.pen])
 					or (self[AttrType.pen] == 0
 						and lastAttributes[AttrType.pen] == 0))
-	
+
 	def gcode(self):
 		return f"G{self[AttrType.pen]} X{self[AttrType.x]:.3f} Y{self[AttrType.y]:.3f}"
 
@@ -123,7 +123,7 @@ def translateToFirstQuarter(parsedGcode):
 	for line in parsedGcode:
 		line[AttrType.x] += translationX
 		line[AttrType.y] += translationY
-	
+
 	return parsedGcode
 
 def getDilationFactor(parsedGcode, xSize, ySize):
@@ -152,7 +152,7 @@ def toArduinoData(parsedGcode):
 		currentStepsX = int(round(line[AttrType.x]-stepsX))
 		currentStepsY = int(round(line[AttrType.y]-stepsY))
 		stepsX += currentStepsX
-		stepsY += currentStepsY		
+		stepsY += currentStepsY
 
 		if line[AttrType.pen]:
 			data += writeByte
@@ -161,7 +161,7 @@ def toArduinoData(parsedGcode):
 
 		data += currentStepsX.to_bytes(2, byteorder="big", signed=True)
 		data += currentStepsY.to_bytes(2, byteorder="big", signed=True)
-	
+
 	return data
 
 def parseGcode(data, useG=False, feedVisibleBelow=None, speedVisibleBelow=None):
@@ -214,16 +214,17 @@ def parseArgs(namespace):
 		help="Dilation factor to apply (useful to convert mm to steps)")
 
 	argParser.parse_args(namespace=namespace)
+
 	if namespace.output is None and namespace.binary_output is None:
 		argParser.error("at least one of --output, --binary-output should be provided")
-	
+
 	try:
 		size = namespace.size.split("x")
 		namespace.xSize = float(size[0])
 		namespace.ySize = float(size[1])
 	except:
 		argParser.error(f"invalid formatting for --size: {namespace.size}")
-	
+
 	if namespace.use_g == False and namespace.feed_visible_below is None and namespace.speed_visible_below is None:
 		argParser.error(f"at least one of --use-g, --feed-visible-below, --speed-visible-below should be provided")
 
