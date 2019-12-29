@@ -1,7 +1,7 @@
 import argparse
 from enum import Enum
 import text_to_gcode.text_to_gcode as text_to_gcode
-import gcode_parser.gcode_parser as gcode_parser
+import gcode_parser
 
 def parseArgs(namespace):
 	argParser = argparse.ArgumentParser(fromfile_prefix_chars="@",
