@@ -120,7 +120,7 @@ class ParsedLine:
 		return f"G{self[AttrType.pen]} X{self[AttrType.x]:.3f} Y{self[AttrType.y]:.3f}"
 
 
-def translateToFirstQuarter(parsedGcode):
+def translateToFirstQuarter(parsedGcode, log=_log_nothing):
 	translationX = -min([line[AttrType.x] for line in parsedGcode])
 	translationY = -min([line[AttrType.y] for line in parsedGcode])
 
@@ -128,6 +128,7 @@ def translateToFirstQuarter(parsedGcode):
 		line[AttrType.x] += translationX
 		line[AttrType.y] += translationY
 
+	log(f"[info] Translation vector: ({translationX}, {translationY})")
 	return parsedGcode
 
 def getDilationFactor(parsedGcode, xSize, ySize):
@@ -145,10 +146,27 @@ def dilate(parsedGcode, dilationFactor):
 		line[AttrType.y] *= dilationFactor
 	return parsedGcode
 
+def addEnd(parsedGcode, endHome=False, log=_log_nothing):
+	if endHome:
+		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
+		log("[info] The gcode path ends at (0, 0)")
+	elif len(parsedGcode) > 0:
+		parsedGcode.append(ParsedLine.fromRawCoordinates(0,
+			parsedGcode[-1][AttrType.x], parsedGcode[-1][AttrType.y]))
+		log(f"[info] Before dilating the gcode path ends at ({parsedGcode[-1][AttrType.x]}, {parsedGcode[-1][AttrType.y]})")
+	return parsedGcode
+
+def resize(parsedGcode, xSize, ySize, dilation=1.0, log=_log_nothing):
+	dilationFactor = dilation * getDilationFactor(parsedGcode, xSize, ySize)
+	parsedGcode = dilate(parsedGcode, dilationFactor)
+
+	log("[info] Dilation factor:", dilationFactor)
+	return parsedGcode
+
 def toGcode(parsedGcode):
 	return "\n".join([l.gcode() for l in parsedGcode], ) + "\n"
 
-def toArduinoData(parsedGcode):
+def toBinaryData(parsedGcode):
 	stepsX, stepsY = 0, 0
 	data = b""
 
@@ -248,21 +266,14 @@ def main():
 		feedVisibleBelow=Args.feed_visible_below,
 		speedVisibleBelow=Args.speed_visible_below)
 
-	parsedGcode = translateToFirstQuarter(parsedGcode)
-	if Args.end_home:
-		parsedGcode.append(ParsedLine.fromRawCoordinates(0, 0, 0))
-		log("[info] The gcode path ends at (0,0)")
-	elif len(parsedGcode) > 0:
-		parsedGcode.append(ParsedLine.fromRawCoordinates(0,
-			parsedGcode[-1][AttrType.x], parsedGcode[-1][AttrType.y]))
-		log("[info] Before dilating the gcode path ends at (" + str(parsedGcode[-1][AttrType.x]) + "," + parsedGcode[-1][AttrType.y] + ")")
+	parsedGcode = translateToFirstQuarter(parsedGcode, log=log)
+	parsedGcode = addEnd(parsedGcode, Args.end_home, log=log)
+	parsedGcode = resize(parsedGcode, Args.xSize, Args.ySize, Args.dilation, log=log)
 
-	dilationFactor = Args.dilation * getDilationFactor(parsedGcode, Args.xSize, Args.ySize)
-	parsedGcode = dilate(parsedGcode, dilationFactor)
-	log("[info] Dilation factor:", dilationFactor)
-
-	Args.output.write(toGcode(parsedGcode))
-	Args.binary_output.write(toArduinoData(parsedGcode))
+	if Args.output is not None:
+		Args.output.write(toGcode(parsedGcode))
+	if Args.binary_output is not None:
+		Args.binary_output.write(toBinaryData(parsedGcode))
 
 if __name__ == '__main__':
 	main()
