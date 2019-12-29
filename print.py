@@ -71,6 +71,7 @@ def parseArgs(namespace):
 	
 	argParser.parse_args(namespace=namespace)
 
+
 	try:
 		size = namespace.size.split("x")
 		namespace.xSize = float(size[0])

@@ -237,6 +237,7 @@ def parseArgs(namespace):
 
 	argParser.parse_args(namespace=namespace)
 
+
 	if namespace.output is None and namespace.binary_output is None:
 		argParser.error("at least one of --output, --binary-output should be provided")
 
