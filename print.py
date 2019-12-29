@@ -4,6 +4,7 @@ import argparse
 from enum import Enum
 import text_to_gcode.text_to_gcode as text_to_gcode
 import gcode_parser
+import sender
 
 def parseArgs(namespace):
 	argParser = argparse.ArgumentParser(fromfile_prefix_chars="@",
@@ -146,6 +147,10 @@ def main():
 
 	if Args.binary_output is not None:
 		Args.binary_output.write(binaryData)
+
+
+	sender.sendData(binaryData, Args.serial_port, Args.baud_rate, Args.simulate, log=log)
+
 
 if __name__ == "__main__":
 	main()
