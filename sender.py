@@ -44,10 +44,6 @@ def sendData(data, serialPort, baudRate, simulate=False, log=_log_nothing):
 			if (readData != "Completed!"):
 				log(serialLogLabel, readData)
 				readData = ser.readline()[:-2].decode("utf8")
-	
-
-
-
 
 
 def parseArgs(namespace):
@@ -87,7 +83,7 @@ def main():
 		if Args.log is not None:
 			kwargs["flush"] = True
 			print(*args, **kwargs, file=Args.log)
-	
+
 	data = Args.input.read()
 	sendData(data, Args.serial_port, Args.baud_rate, Args.simulate, log=log)
 

@@ -6,13 +6,31 @@ import text_to_gcode.text_to_gcode as text_to_gcode
 import gcode_parser
 import sender
 
+
+def textToGcode(text):
+	letters = text_to_gcode.readLetters(Args.gcode_directory)
+	return text_to_gcode.textToGcode(letters, text, Args.line_length, Args.line_spacing, Args.padding)
+
+def parseGcode(gcodeData):
+	parsedGcode = gcode_parser.parseGcode(gcodeData, log=log,
+		useG=Args.use_g,
+		feedVisibleBelow=Args.feed_visible_below,
+		speedVisibleBelow=Args.speed_visible_below)
+
+	parsedGcode = gcode_parser.translateToFirstQuarter(parsedGcode, log=log)
+	parsedGcode = gcode_parser.addEnd(parsedGcode, Args.end_home, log=log)
+	parsedGcode = gcode_parser.resize(parsedGcode, Args.xSize, Args.ySize, Args.dilation, log=log)
+
+	return parsedGcode
+
+
 def parseArgs(namespace):
 	argParser = argparse.ArgumentParser(fromfile_prefix_chars="@",
 		description="Print something with the connected plotter")
 	subparsers = argParser.add_subparsers(dest="subcommand",
 		description="Format subcommands")
 
-	ioGroup = argParser.add_argument_group("Output options")	
+	ioGroup = argParser.add_argument_group("Output options")
 	ioGroup.add_argument("-o", "--output", type=argparse.FileType('w'), required=False, metavar="FILE",
 		help="File in which to save the generated gcode (will be ignored if using binary subcommand)")
 	ioGroup.add_argument("-b", "--binary-output", type=argparse.FileType('wb'), required=False, metavar="FILE",
@@ -71,7 +89,7 @@ def parseArgs(namespace):
 		help="Distance between two subsequent lines")
 	tpTextGroup.add_argument("--padding", type=float, default=1.5,
 		help="Empty space between characters")
-	
+
 	argParser.parse_args(namespace=namespace)
 
 
@@ -103,26 +121,9 @@ def log(*args, **kwargs):
 		kwargs["flush"] = True
 		print(*args, **kwargs, file=Args.log)
 
-
-def textToGcode(text):
-	letters = text_to_gcode.readLetters(Args.gcode_directory)
-	return text_to_gcode.textToGcode(letters, text, Args.line_length, Args.line_spacing, Args.padding)
-
-def parseGcode(gcodeData):	
-	parsedGcode = gcode_parser.parseGcode(gcodeData, log=log,
-		useG=Args.use_g,
-		feedVisibleBelow=Args.feed_visible_below,
-		speedVisibleBelow=Args.speed_visible_below)
-
-	parsedGcode = gcode_parser.translateToFirstQuarter(parsedGcode, log=log)
-	parsedGcode = gcode_parser.addEnd(parsedGcode, Args.end_home, log=log)
-	parsedGcode = gcode_parser.resize(parsedGcode, Args.xSize, Args.ySize, Args.dilation, log=log)
-
-	return parsedGcode
-
 def main():
 	parseArgs(Args)
-	
+
 	binaryData = b""
 	if Args.subcommand == "binary":
 		binaryData = Args.input.read()
@@ -139,7 +140,7 @@ def main():
 			Args.speed_visible_below = None
 		else:
 			raise AssertionError()
-		
+	
 		parsedGcode = parseGcode(gcodeData)
 		binaryData = gcode_parser.toBinaryData(parsedGcode)
 		if Args.output is not None:
