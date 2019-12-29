@@ -8,7 +8,8 @@ class Subcommand(Enum):
 	text  = 1
 
 def parseArgs(namespace):
-	argParser = argparse.ArgumentParser(description="Print something with the connected plotter")
+	argParser = argparse.ArgumentParser(fromfile_prefix_chars="@",
+		description="Print something with the connected plotter")
 	subparsers = argParser.add_subparsers(description="Format subcommands")
 
 	ioGroup = argParser.add_argument_group("Output options")	
