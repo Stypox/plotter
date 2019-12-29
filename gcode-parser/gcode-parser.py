@@ -191,9 +191,9 @@ def parseArgs(namespace):
 	ioGroup.add_argument("-i", "--input", type=argparse.FileType('r'), default="-", metavar="FILE",
 		help="File from which to read the gcode to parse")
 	ioGroup.add_argument("-o", "--output", type=argparse.FileType('w'), required=False, metavar="FILE",
-		help="File in which to save the processed gcode")
+		help="File in which to save the generated gcode")
 	ioGroup.add_argument("-b", "--binary-output", type=argparse.FileType('wb'), required=False, metavar="FILE",
-		help="File in which to save the binary data to feed to the plotter")
+		help="File in which to save the binary data ready to be fed to the plotter")
 	ioGroup.add_argument("-l", "--log", type=argparse.FileType('w'), required=False, metavar="FILE",
 		help="File in which to save logs, comments and warnings")
 
