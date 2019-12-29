@@ -126,18 +126,13 @@ def translateToFirstQuarter(parsedGcode):
 	
 	return parsedGcode
 
-def getDilationFactor(parsedGcode, sizeX, sizeY):
-	"""
-	parsedGcode must be first translated to the first quarter
-	TODO ^ improve
-	"""
-
-	maxX = max([line[AttrType.x] for line in parsedGcode])
-	maxY = max([line[AttrType.y] for line in parsedGcode])
+def getDilationFactor(parsedGcode, xSize, ySize):
+	xSizeReal = max([line[AttrType.x] for line in parsedGcode]) - min([line[AttrType.x] for line in parsedGcode])
+	ySizeReal = max([line[AttrType.y] for line in parsedGcode]) - min([line[AttrType.y] for line in parsedGcode])
 
 	return min([
-		sizeX / maxX,
-		sizeY / maxY,
+		xSize / xSizeReal,
+		ySize / ySizeReal,
 	])
 
 def dilate(parsedGcode, dilationFactor):
