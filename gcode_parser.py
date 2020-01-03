@@ -164,8 +164,10 @@ def detectParsingMode(data, log=_log_nothing):
 		f"{speedVisibleCount} visible ones, with a feed threshold of {speedThreshold}")
 	
 
-	def score(visible, invisible): # higher is better
-		return (1.0 - abs(invisible - visible) / (invisible + visible)) * math.log10(invisible + visible)
+	def score(invisible, visible): # higher is better
+		return ((1.0 - abs(invisible - visible) / (invisible + visible))
+			* (0.5 + 0.5 * visible / (invisible + visible))
+			* math.log10(invisible + visible))
 	
 	gScore = score(gInvisibleCount, gVisibleCount)
 	feedScore = score(feedInvisibleCount, feedVisibleCount)
