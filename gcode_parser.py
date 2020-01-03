@@ -3,6 +3,8 @@
 from enum import Enum
 import argparse
 import sys
+import re
+import math
 
 writeByte = b"w"
 moveByte = b"m"
@@ -117,6 +119,70 @@ class ParsedLine:
 		return f"G{self[AttrType.pen]} X{self[AttrType.x]:.3f} Y{self[AttrType.y]:.3f}"
 
 
+def detectParsingMode(data, log=_log_nothing):
+	logLabel = "[info] parsing mode detection:"
+	gRegex = r"(?:\s|\A)[Gg]([01])(?:\s|\Z)"
+	feedRegex = r"(?:\s|\A)[Ff]([-+]?(?:[0-9]*\.[0-9]+|[0-9]+))(?:\s|\Z)"
+	speedRegex = r"(?:\s|\A)[Ss]([-+]?(?:[0-9]*\.[0-9]+|[0-9]+))(?:\s|\Z)"
+
+	gInvisibleCount, gVisibleCount = 0, 0
+	for gMatch in re.finditer(gRegex, data):
+		if gMatch.group(0) == "0": gInvisibleCount += 1
+		else: gVisibleCount += 1
+	log(logLabel, f"found {gInvisibleCount} invisible G attributes and {gVisibleCount} visible ones")
+	
+	def getVisibilityFeedOrSpeed(regex):
+		foundValues, allCount = {}, 0
+		for match in re.finditer(regex, data):
+			allCount += 1
+			if match.group(1) in foundValues:
+				foundValues[match.group(1)] += 1
+			else:
+				foundValues[match.group(1)] = 1
+
+		average = 0
+		for value, count in foundValues.items():
+			average += float(value) * count
+		average /= allCount
+	
+		invisibleCount, visibleCount = 0, 0
+		for value, count in foundValues.items():
+			if float(value) > average:
+				invisibleCount += count
+			else:
+				visibleCount += count
+		
+		return invisibleCount, visibleCount, average
+	
+	feedInvisibleCount, feedVisibleCount, feedThreshold = getVisibilityFeedOrSpeed(feedRegex)
+	log(logLabel, f"found {feedInvisibleCount} invisible feed attributes and " +
+		f"{feedVisibleCount} visible ones, with a feed threshold of {feedThreshold}")
+
+	speedInvisibleCount, speedVisibleCount, speedThreshold = getVisibilityFeedOrSpeed(speedRegex)
+	log(logLabel, f"found {speedInvisibleCount} invisible speed attributes and " +
+		f"{speedVisibleCount} visible ones, with a feed threshold of {speedThreshold}")
+	
+
+	def score(visible, invisible): # higher is better
+		return (1.0 - abs(invisible - visible) / (invisible + visible)) * math.log10(invisible + visible)
+	
+	gScore = score(gInvisibleCount, gVisibleCount)
+	feedScore = score(feedInvisibleCount, feedVisibleCount)
+	speedScore = score(speedInvisibleCount, speedVisibleCount)
+	log(logLabel, f"gScore={gScore}, feedScore={feedScore}, speedScore={speedScore}")
+
+	maxScore = max(gScore, feedScore, speedScore)
+	if maxScore == gScore:
+		log(logLabel, "chosen g mode")
+		return  True,  None,          None
+	elif maxScore == feedScore:
+		log(logLabel, f"chosen feed mode with feed visible below {feedThreshold}")
+		return  False, feedThreshold, None
+	else:
+		log(logLabel, f"chosen speed mode with speed visible below {speedThreshold}")
+		return  False, None,          speedThreshold
+
+
 def translateToFirstQuarter(parsedGcode, log=_log_nothing):
 	translationX = -min([line[AttrType.x] for line in parsedGcode])
 	translationY = -min([line[AttrType.y] for line in parsedGcode])
@@ -216,7 +282,7 @@ def parseArgs(namespace):
 	ioGroup.add_argument("-l", "--log", type=argparse.FileType('w'), required=False, metavar="FILE",
 		help="File in which to save logs, comments and warnings")
 
-	parseGroup = argParser.add_argument_group("Gcode parsing options (at least one should be used)")
+	parseGroup = argParser.add_argument_group("Gcode parsing options (detected automatically if not provided)")
 	parseGroup.add_argument("-g", "--use-g", action="store_true",
 		help="Consider `G0` as pen up and `G1` as pen down")
 	parseGroup.add_argument("--feed-visible-below", type=float, metavar="VALUE",
@@ -245,8 +311,9 @@ def parseArgs(namespace):
 	except:
 		argParser.error(f"invalid formatting for --size: {namespace.size}")
 
-	if namespace.use_g == False and namespace.feed_visible_below is None and namespace.speed_visible_below is None:
-		argParser.error(f"at least one of --use-g, --feed-visible-below, --speed-visible-below should be provided")
+	namespace.auto = (namespace.use_g == False and
+		namespace.feed_visible_below is None and
+		namespace.speed_visible_below is None)
 
 class Args:
 	pass
@@ -258,8 +325,13 @@ def main():
 		if Args.log is not None:
 			print(*args, **kwargs, file=Args.log)
 
+	data = Args.input.read()
 
-	parsedGcode = parseGcode(Args.input.read(), log=log,
+	if Args.auto:
+		Args.use_g, Args.feed_visible_below, Args.speed_visible_below = \
+			detectParsingMode(data, log=log)
+
+	parsedGcode = parseGcode(data, log=log,
 		useG=Args.use_g,
 		feedVisibleBelow=Args.feed_visible_below,
 		speedVisibleBelow=Args.speed_visible_below)

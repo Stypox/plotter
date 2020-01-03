@@ -12,6 +12,10 @@ def textToGcode(text):
 	return text_to_gcode.textToGcode(letters, text, Args.line_length, Args.line_spacing, Args.padding)
 
 def parseGcode(gcodeData):
+	if Args.auto:
+		Args.use_g, Args.feed_visible_below, Args.speed_visible_below = \
+			gcode_parser.detectParsingMode(gcodeData, log=log)
+
 	parsedGcode = gcode_parser.parseGcode(gcodeData, log=log,
 		useG=Args.use_g,
 		feedVisibleBelow=Args.feed_visible_below,
@@ -66,7 +70,7 @@ def parseArgs(namespace):
 	gpDataGroup.add_argument("-i", "--input", type=argparse.FileType('r'), default="-", metavar="FILE",
 		help="File from which to read the gcode to print")
 
-	gpParseGroup = gcodeParser.add_argument_group("Gcode parsing options (at least one should be used)")
+	gpParseGroup = gcodeParser.add_argument_group("Gcode parsing options (detected automatically if not provided)")
 	gpParseGroup.add_argument("--use-g", action="store_true",
 		help="Consider `G0` as pen up and `G1` as pen down")
 	gpParseGroup.add_argument("--feed-visible-below", type=float, metavar="VALUE",
@@ -110,8 +114,9 @@ def parseArgs(namespace):
 	if namespace.subcommand is None:
 		argParser.error(f"exactly one subcommand from the following is required: binary, gcode, text")
 
-	if namespace.subcommand == "gcode" and namespace.use_g == False and namespace.feed_visible_below is None and namespace.speed_visible_below is None:
-		argParser.error(f"at least one of --use-g, --feed-visible-below, --speed-visible-below should be provided to subcommand gcode")
+	namespace.auto = (namespace.use_g == False and
+		namespace.feed_visible_below is None and
+		namespace.speed_visible_below is None)
 
 class Args:
 	pass
