@@ -58,7 +58,8 @@ class AttributeParser:
 
 			return (key, value)
 		except (ValueError, IndexError):
-			log(f"[WARNING {lineNr:>5}]: ignoring unknown attribute \"{word}\"")
+			if word != "":
+				log(f"[WARNING {lineNr:>5}]: ignoring unknown attribute \"{word}\"")
 			return None
 
 
