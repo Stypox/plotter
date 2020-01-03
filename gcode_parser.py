@@ -36,14 +36,14 @@ class AttributeParser:
 				value = float(word[1:])
 
 			key = word[0].upper()
-			if   key == "F" and self.useFeed:
-				key = AttrType.pen
-				value = 1 if value < self.feedVisibleBelow else 0
-			elif key == "G" and self.useG:
+			if   key == "G" and self.useG:
 				if value == 0 or value == 1:
 					key = AttrType.pen
 				else:
 					raise ValueError()
+			elif key == "F" and self.useFeed:
+				key = AttrType.pen
+				value = 1 if value < self.feedVisibleBelow else 0
 			elif key == "S" and self.useSpeed:
 				key = AttrType.pen
 				value = 1 if value < self.speedVisibleBelow else 0
