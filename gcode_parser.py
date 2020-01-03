@@ -30,35 +30,32 @@ class AttributeParser:
 
 	def parseAttribute(self, word, lineNr, log=_log_nothing):
 		try:
-			if word == "":
-				key = ""
-			else:
-				try: # attribute value is an integer
-					value = int(word[1:])
-				except: # attribute value is a floating point number
-					value = float(word[1:])
+			try: # attribute value is an integer
+				value = int(word[1:])
+			except ValueError: # attribute value is a floating point number
+				value = float(word[1:])
 
-				key = word[0].upper()
-				if   key == "F" and self.useFeed:
+			key = word[0].upper()
+			if   key == "F" and self.useFeed:
+				key = AttrType.pen
+				value = 1 if value < self.feedVisibleBelow else 0
+			elif key == "G" and self.useG:
+				if value == 0 or value == 1:
 					key = AttrType.pen
-					value = 1 if value < feedVisibleBelow else 0
-				elif key == "G" and self.useG:
-					if value == 0 or value == 1:
-						key = AttrType.pen
-					else:
-						raise ValueError()
-				elif key == "S" and self.useSpeed:
-					key = AttrType.pen
-					value = 1 if value < speedVisibleBelow else 0
-				elif key == "X":
-					key = AttrType.x
-				elif key == "Y":
-					key = AttrType.y
 				else:
 					raise ValueError()
+			elif key == "S" and self.useSpeed:
+				key = AttrType.pen
+				value = 1 if value < self.speedVisibleBelow else 0
+			elif key == "X":
+				key = AttrType.x
+			elif key == "Y":
+				key = AttrType.y
+			else:
+				raise ValueError()
 
 			return (key, value)
-		except:
+		except (ValueError, IndexError):
 			log(f"[WARNING {lineNr:>5}]: ignoring unknown attribute \"{word}\"")
 			return None
 
