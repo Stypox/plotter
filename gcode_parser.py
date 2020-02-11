@@ -132,7 +132,7 @@ def detectParsingMode(data, log=_log_nothing):
 		if gMatch.group(0) == "0": gInvisibleCount += 1
 		else: gVisibleCount += 1
 	log(logLabel, f"found {gInvisibleCount} invisible G attributes and {gVisibleCount} visible ones")
-	
+
 	def getVisibilityFeedOrSpeed(regex):
 		foundValues, allCount = {}, 0
 		for match in re.finditer(regex, data):
@@ -146,16 +146,16 @@ def detectParsingMode(data, log=_log_nothing):
 		for value, count in foundValues.items():
 			average += float(value) * count
 		average /= allCount
-	
+
 		invisibleCount, visibleCount = 0, 0
 		for value, count in foundValues.items():
 			if float(value) > average:
 				invisibleCount += count
 			else:
 				visibleCount += count
-		
+
 		return invisibleCount, visibleCount, average
-	
+
 	feedInvisibleCount, feedVisibleCount, feedThreshold = getVisibilityFeedOrSpeed(feedRegex)
 	log(logLabel, f"found {feedInvisibleCount} invisible feed attributes and " +
 		f"{feedVisibleCount} visible ones, with a feed threshold of {feedThreshold}")
@@ -163,13 +163,13 @@ def detectParsingMode(data, log=_log_nothing):
 	speedInvisibleCount, speedVisibleCount, speedThreshold = getVisibilityFeedOrSpeed(speedRegex)
 	log(logLabel, f"found {speedInvisibleCount} invisible speed attributes and " +
 		f"{speedVisibleCount} visible ones, with a feed threshold of {speedThreshold}")
-	
+
 
 	def score(invisible, visible): # higher is better
 		return ((1.0 - abs(invisible - visible) / (invisible + visible))
 			* (0.5 + 0.5 * visible / (invisible + visible))
 			* math.log10(invisible + visible))
-	
+
 	gScore = score(gInvisibleCount, gVisibleCount)
 	feedScore = score(feedInvisibleCount, feedVisibleCount)
 	speedScore = score(speedInvisibleCount, speedVisibleCount)

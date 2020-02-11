@@ -146,7 +146,7 @@ def main():
 			Args.speed_visible_below = None
 		else:
 			raise AssertionError()
-	
+
 		parsedGcode = parseGcode(gcodeData)
 		binaryData = gcode_parser.toBinaryData(parsedGcode)
 		if Args.output is not None:
