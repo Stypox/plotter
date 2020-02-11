@@ -319,10 +319,8 @@ def parseArgs(namespace):
 		namespace.feed_visible_below is None and
 		namespace.speed_visible_below is None)
 
-class Args:
-	pass
-
 def main():
+	class Args: pass
 	parseArgs(Args)
 
 	def log(*args, **kwargs):

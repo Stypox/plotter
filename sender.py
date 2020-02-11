@@ -74,10 +74,8 @@ def parseArgs(namespace):
 		if namespace.baud_rate is None:
 			argParser.error(f"--baud-rate is required unless there is --simulate")
 
-class Args:
-	pass
-
 def main():
+	class Args: pass
 	parseArgs(Args)
 
 	def log(*args, **kwargs):
