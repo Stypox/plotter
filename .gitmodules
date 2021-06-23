@@ -1,3 +1,6 @@
 [submodule "text_to_gcode"]
 	path = text_to_gcode
 	url = https://github.com/Stypox/text-to-gcode.git
+[submodule "image_to_gcode"]
+	path = image_to_gcode
+	url = https://github.com/Stypox/image-to-gcode.git
