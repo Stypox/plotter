@@ -115,9 +115,10 @@ def parseArgs(namespace):
 	if namespace.subcommand is None:
 		argParser.error(f"exactly one subcommand from the following is required: binary, gcode, text")
 
-	namespace.auto = (namespace.use_g == False and
-		namespace.feed_visible_below is None and
-		namespace.speed_visible_below is None)
+	if Args.subcommand == "gcode":
+		namespace.auto = (namespace.use_g == False and
+			namespace.feed_visible_below is None and
+			namespace.speed_visible_below is None)
 
 class Args:
 	pass
@@ -141,6 +142,7 @@ def main():
 			gcodeData = textToGcode(Args.input.read())
 
 			# settings for gcode parser
+			Args.auto = False
 			Args.use_g = True
 			Args.feed_visible_below = None
 			Args.speed_visible_below = None
